@@ -5,54 +5,79 @@ export interface MaskPoint {
   y: number;
 }
 
+export type MaskRequestCallback = (point: MaskPoint) => void;
+
 @Component
 export struct ImageMaskCanvas {
   @Prop imageResource: Resource;
-  @Prop maskResource: Resource;
+  @Prop @Watch('drawScene') maskVersion: number;
   @Prop imagePixelWidth: number;
   @Prop imagePixelHeight: number;
   @Link @Watch('drawScene') clickPoints: MaskPoint[];
+  onMaskRequest: MaskRequestCallback = () => {};
+
+  private readonly demoMaskResource: Resource = $r('app.media.demo_road_mask_overlay');
 
   private readonly contextSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private readonly canvasContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.contextSettings);
-  private imagePixelMap?: image.PixelMap;
   private maskPixelMap?: image.PixelMap;
+  private isMaskLoading: boolean = false;
   private canvasWidth: number = 0;
   private canvasHeight: number = 0;
   private isCanvasReady: boolean = false;
 
   async aboutToAppear(): Promise<void> {
-    this.imagePixelMap = await this.loadPixelMap(this.imageResource);
-    this.maskPixelMap = await this.loadPixelMap(this.maskResource);
     this.drawScene();
   }
 
   build() {
-    Canvas(this.canvasContext)
+    Stack() {
+      Image(this.imageResource)
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+
+      Canvas(this.canvasContext)
+        .width('100%')
+        .height('100%')
+        .onReady(() => {
+          this.isCanvasReady = true;
+          this.drawScene();
+        })
+        .onAreaChange((_, newArea: Area) => {
+          this.canvasWidth = Number(newArea.width);
+          this.canvasHeight = Number(newArea.height);
+          this.drawScene();
+        })
+        .onClick((event: ClickEvent) => {
+          const point: MaskPoint = {
+            x: event.x,
+            y: event.y
+          };
+          this.clickPoints = [...this.clickPoints, point];
+          this.onMaskRequest(point);
+          this.drawScene();
+        })
+    }
       .width('100%')
       .height('100%')
       .clip(true)
       .borderRadius(20)
       .backgroundColor('#111827')
-      .onReady(() => {
-        this.isCanvasReady = true;
-        this.drawScene();
-      })
-      .onAreaChange((_, newArea: Area) => {
-        this.canvasWidth = Number(newArea.width);
-        this.canvasHeight = Number(newArea.height);
-        this.drawScene();
-      })
-      .onClick((event: ClickEvent) => {
-        this.clickPoints = [
-          ...this.clickPoints,
-          {
-            x: event.x,
-            y: event.y
-          }
-        ];
-        this.drawScene();
-      })
+  }
+
+  private async loadMaskResource(): Promise<void> {
+    if (this.isMaskLoading) {
+      return;
+    }
+
+    this.isMaskLoading = true;
+    try {
+      this.maskPixelMap = await this.loadPixelMap(this.demoMaskResource);
+      this.drawScene();
+    } finally {
+      this.isMaskLoading = false;
+    }
   }
 
   private async loadPixelMap(resource: Resource): Promise<image.PixelMap> {
@@ -78,11 +103,12 @@ export struct ImageMaskCanvas {
       return;
     }
 
-    this.canvasContext.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-    this.drawBitmap(this.imagePixelMap);
+    this.ensureMaskResourceLoaded();
 
-    if (this.clickPoints.length > 0) {
-      this.drawBitmap(this.maskPixelMap);
+    this.canvasContext.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+    if (this.maskPixelMap) {
+      this.drawOverlayBitmap(this.maskPixelMap);
     }
 
     this.clickPoints.forEach((point: MaskPoint, index: number) => {
@@ -90,7 +116,22 @@ export struct ImageMaskCanvas {
     });
   }
 
-  private drawBitmap(bitmap?: image.PixelMap): void {
+  private ensureMaskResourceLoaded(): void {
+    if (this.maskVersion <= 0) {
+      if (this.maskPixelMap) {
+        this.maskPixelMap = undefined;
+      }
+      return;
+    }
+
+    if (this.maskPixelMap || this.isMaskLoading) {
+      return;
+    }
+
+    this.loadMaskResource();
+  }
+
+  private drawOverlayBitmap(bitmap?: image.PixelMap): void {
     if (!bitmap) {
       return;
     }
