@@ -3,8 +3,11 @@ import { ImageMaskCanvas, MaskPoint } from '../components/ImageMaskCanvas';
 @Entry
 @Component
 struct Index {
-  @State imageResource: Resource = $r('app.media.demo_photo');
-  @State maskOverlayResource: Resource = $r('app.media.demo_road_mask_overlay');
+  private readonly demoImageResource: Resource = $r('app.media.demo_photo');
+  private readonly demoMaskResource: Resource = $r('app.media.demo_road_mask_overlay');
+  private readonly demoImagePixelWidth: number = 1200;
+  private readonly demoImagePixelHeight: number = 1800;
+
   @State clickPoints: MaskPoint[] = [];
 
   build() {
@@ -15,7 +18,7 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor('#111827')
 
-        Text('点击任意位置，模拟后端返回道路二值 mask 并覆盖到图片上')
+        Text('????? mask ?? Canvas ???????????? mask')
           .fontSize(14)
           .fontColor('#6B7280')
       }
@@ -23,20 +26,22 @@ struct Index {
       .alignItems(HorizontalAlign.Start)
 
       ImageMaskCanvas({
-        imageResource: this.imageResource,
-        maskOverlayResource: this.maskOverlayResource,
+        imageResource: this.demoImageResource,
+        maskResource: this.demoMaskResource,
+        imagePixelWidth: this.demoImagePixelWidth,
+        imagePixelHeight: this.demoImagePixelHeight,
         clickPoints: this.clickPoints
       })
         .width('100%')
         .layoutWeight(1)
 
       Row({ space: 12 }) {
-        Text(`点击坐标：${this.clickPoints.length}`)
+        Text(`${this.clickPoints.length}`)
           .fontSize(14)
           .fontColor('#374151')
           .layoutWeight(1)
 
-        Button('清空')
+        Button('??')
           .enabled(this.clickPoints.length > 0)
           .onClick(() => {
             this.clickPoints = [];

@@ -1,3 +1,5 @@
+import { image } from '@kit.ImageKit';
+
 export interface MaskPoint {
   x: number;
   y: number;
@@ -5,71 +7,96 @@ export interface MaskPoint {
 
 @Component
 export struct ImageMaskCanvas {
-  @Prop imageResource: Resource = $r('app.media.demo_photo');
-  @Prop maskOverlayResource: Resource = $r('app.media.demo_road_mask_overlay');
-  @Link @Watch('drawMasks') clickPoints: MaskPoint[];
+  @Prop imageResource: Resource;
+  @Prop maskResource: Resource;
+  @Prop imagePixelWidth: number;
+  @Prop imagePixelHeight: number;
+  @Link @Watch('drawScene') clickPoints: MaskPoint[];
 
   private readonly contextSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private readonly canvasContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.contextSettings);
+  private imagePixelMap?: image.PixelMap;
+  private maskPixelMap?: image.PixelMap;
   private canvasWidth: number = 0;
   private canvasHeight: number = 0;
   private isCanvasReady: boolean = false;
 
-  build() {
-    Stack() {
-      Image(this.imageResource)
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-
-      if (this.clickPoints.length > 0) {
-        Image(this.maskOverlayResource)
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Cover)
-      }
-
-      Canvas(this.canvasContext)
-        .width('100%')
-        .height('100%')
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onReady(() => {
-          this.isCanvasReady = true;
-          this.drawMasks();
-        })
-        .onAreaChange((_, newArea: Area) => {
-          this.canvasWidth = Number(newArea.width);
-          this.canvasHeight = Number(newArea.height);
-          this.drawMasks();
-        })
-    }
-    .width('100%')
-    .height('100%')
-    .clip(true)
-    .borderRadius(20)
-    .backgroundColor('#111827')
-    .onClick((event: ClickEvent) => {
-      this.clickPoints = [
-        ...this.clickPoints,
-        {
-          x: event.x,
-          y: event.y
-        }
-      ];
-      this.drawMasks();
-    })
+  async aboutToAppear(): Promise<void> {
+    this.imagePixelMap = await this.loadPixelMap(this.imageResource);
+    this.maskPixelMap = await this.loadPixelMap(this.maskResource);
+    this.drawScene();
   }
 
-  private drawMasks(): void {
+  build() {
+    Canvas(this.canvasContext)
+      .width('100%')
+      .height('100%')
+      .clip(true)
+      .borderRadius(20)
+      .backgroundColor('#111827')
+      .onReady(() => {
+        this.isCanvasReady = true;
+        this.drawScene();
+      })
+      .onAreaChange((_, newArea: Area) => {
+        this.canvasWidth = Number(newArea.width);
+        this.canvasHeight = Number(newArea.height);
+        this.drawScene();
+      })
+      .onClick((event: ClickEvent) => {
+        this.clickPoints = [
+          ...this.clickPoints,
+          {
+            x: event.x,
+            y: event.y
+          }
+        ];
+        this.drawScene();
+      })
+  }
+
+  private async loadPixelMap(resource: Resource): Promise<image.PixelMap> {
+    const hostContext = this.getUIContext().getHostContext();
+    const mediaContent = await hostContext?.resourceManager?.getMediaContent({
+      bundleName: resource.bundleName,
+      moduleName: resource.moduleName,
+      id: resource.id
+    });
+
+    if (!mediaContent) {
+      throw new Error('Failed to load media content.');
+    }
+
+    const imageSource = image.createImageSource(mediaContent.buffer.slice(0, mediaContent.byteLength));
+    const pixelMap = await imageSource.createPixelMap({ desiredPixelFormat: image.PixelMapFormat.RGBA_8888 });
+    imageSource.release();
+    return pixelMap;
+  }
+
+  private drawScene(): void {
     if (!this.isCanvasReady || this.canvasWidth <= 0 || this.canvasHeight <= 0) {
       return;
     }
 
     this.canvasContext.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+    this.drawBitmap(this.imagePixelMap);
+
+    if (this.clickPoints.length > 0) {
+      this.drawBitmap(this.maskPixelMap);
+    }
 
     this.clickPoints.forEach((point: MaskPoint, index: number) => {
       this.drawClickMarker(point, index + 1);
     });
+  }
+
+  private drawBitmap(bitmap?: image.PixelMap): void {
+    if (!bitmap) {
+      return;
+    }
+
+    const imageRect: ImageRenderRect = this.getCoverRenderRect();
+    this.canvasContext.drawImage(bitmap, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
   }
 
   private drawClickMarker(point: MaskPoint, order: number): void {
@@ -85,4 +112,24 @@ export struct ImageMaskCanvas {
     this.canvasContext.fillStyle = '#FFFFFF';
     this.canvasContext.fillText(`${order}`, point.x + 12, point.y - 10);
   }
+
+  private getCoverRenderRect(): ImageRenderRect {
+    const scale: number = Math.max(this.canvasWidth / this.imagePixelWidth, this.canvasHeight / this.imagePixelHeight);
+    const width: number = this.imagePixelWidth * scale;
+    const height: number = this.imagePixelHeight * scale;
+
+    return {
+      x: (this.canvasWidth - width) / 2,
+      y: (this.canvasHeight - height) / 2,
+      width,
+      height
+    };
+  }
+}
+
+interface ImageRenderRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
